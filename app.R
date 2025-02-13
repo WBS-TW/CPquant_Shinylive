@@ -580,7 +580,7 @@ ui <- shiny::navbarPage("Quantification by deconvolution from Skyline output",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("R/instructions_CPquant.md")
+                                    shiny::includeMarkdown("instructions_CPquant.md")
                                 )
                             )
                         )
