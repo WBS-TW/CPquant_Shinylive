@@ -14,10 +14,170 @@ library(DT)
 library(plotly)
 library(purrr)
 library(markdown)
-library(openxlsx)
+#library(openxlsx)
+library(writexl)
 
 ####################################################
 
+# Various utilities and helper functions for CPquant
+
+
+#########################################################################################################
+#------------------------------------------ CPquant functions ------------------------------------------#
+#########################################################################################################
+
+### Function to perform deconvolution on a single data frame ###
+perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
+
+    df_matrix <- as.matrix(df)
+
+    print(paste("df_matrix dimensions:", dim(df_matrix)))
+    print(paste("combined_standard dimensions:", dim(combined_standard)))
+
+    if (nrow(combined_standard) != nrow(df_matrix)) {
+        stop("Dimensions of combined_standard and df are incompatible.")
+    }
+
+    # Reshape df_matrix if it has only one column or extract the first column if it has multiple
+    if (ncol(df_matrix) == 1) {
+        df_vector <- as.vector(df_matrix)
+    } else {
+        df_vector <- as.vector(df_matrix["Relative_Area"])  # Extract the first column for nnls
+    }
+
+    # Check for NA/NaN/Inf values in df_vector and combined_standard
+    if (any(is.na(df_vector)) || any(is.nan(df_vector)) || any(is.infinite(df_vector))) {
+        stop("df_vector contains NA/NaN/Inf values.")
+    }
+
+    if (any(is.na(combined_standard)) || any(is.nan(combined_standard)) || any(is.infinite(combined_standard))) {
+        stop("combined_standard contains NA/NaN/Inf values.")
+    }
+
+    # Perform nnls
+    # combined_standard is response factor and df_vector is Relative_Area
+    deconv <- nnls::nnls(combined_standard, df_vector)
+
+    # Extract deconvolution results
+    deconv_coef <- deconv$x
+
+
+    #Normalize the coefficients so they sum to 1
+    if (sum(deconv_coef) > 0) {
+        deconv_coef <- deconv_coef / sum(deconv_coef)
+    }else(deconv_coef <- 0)
+
+    # Calculate deconvolved values (which is the response factor) using matrix multiplication
+    deconv_resolved <- combined_standard %*% deconv_coef
+
+    # Calculate the sum of RF*frac
+    sum_deconv_RF <- as.matrix(CPs_standards_sum_RF) %*% deconv_coef
+
+
+
+
+
+    # Calculate the goodness of fit by coefficient of determination (R2)
+    # Calculate the total sum of squares (SST)
+    sst <- sum((df_vector - mean(df_vector))^2)
+    # Calculate the residual sum of squares (SSR)
+    ssr <- sum((df_vector - deconv_resolved/sum(deconv_resolved))^2)
+
+    # Calculate R-squared coefficient of determination
+    deconv_rsquared <- 1 - (ssr / sst)
+
+    # Calculate Mean Squared Error (MSE)
+    mse <- mean((df_vector - deconv_resolved/sum(deconv_resolved))^2)
+
+    # Calculate Root Mean Squared Error (RMSE)
+    rmse <- sqrt(mse)
+
+    #Chiq-square test: ensure that values are positive for chi-square test
+    # if (any(deconv_resolved < 0) || any(df_vector < 0)) {
+    #     warning("Non-positive values found, skipping chi-square test")
+    #     chisq_result <- NULL
+    # } else {
+    #     #adding a small constant to avoid 0 values
+    #     observed_corr <- df_vector + 1E-12
+    #     predicted_corr <- deconv_resolved + 1E-12
+    #     chisq_result <- chisq.test(x= observed_corr, p = predicted_corr/sum(predicted_corr), rescale.p = TRUE)
+    # }
+
+
+    # Kolmogorov-Smirnov Test
+    #ks_result <- ks.test(deconv_resolved, df_vector)
+
+
+
+    #combine results for output
+    combined_standard_names <- colnames(combined_standard)
+
+    names(deconv_coef) <- combined_standard_names
+
+
+    return(list(
+        sum_deconv_RF = sum_deconv_RF,
+        deconv_coef = deconv_coef,
+        deconv_resolved = deconv_resolved,
+        deconv_rsquared = deconv_rsquared
+        #chisq_result = chisq_result
+    ))
+}
+
+################################################################################
+
+
+
+defineVariablesUI <- function(Skyline_output){
+    ###START: Define UI components
+
+    # Create the UI components
+    shiny::fluidRow(
+        shiny::column(
+            6,
+            shiny::selectInput(
+                inputId = "removeSamples", #select if some samples will be removed from quantification
+                label = 'Remove samples from quantification?',
+                choices = unique(Skyline_output$Replicate_Name),
+                selected = NULL,
+                multiple = TRUE
+            )
+        ),
+
+        shiny::tags$br(), shiny::tags$br(), shiny::tags$br(), shiny::tags$br(),
+        shiny::column(
+            6,
+            shiny::sliderInput(
+                inputId = "removeRsquared", #keep only Molecule above this rsquared, zero means keep everything
+                label = 'Keep the the calibration curves above this rsquared (0 means keep everything)',
+                min = 0,
+                max = 1,
+                value = 0.80,
+                step = 0.05
+            )
+        )
+    )
+}
+### END FUNCTION
+
+
+defineRecoveryUI <- function(Skyline_output){
+    ###START: Define UI components
+
+    # Create the UI components
+    shiny::fluidRow(
+        shiny::column(
+            6,
+            shiny::selectInput(
+                inputId = "chooseRS", #select which will be the RS
+                label = 'Choose RS',
+                choices = unique(Skyline_output$Molecule[Skyline_output$Molecule_List == "RS"]),
+                selected = NULL,
+                multiple = FALSE
+            )
+        ))
+}
+### END FUNCTION
 
 
 #############################################################################
@@ -305,155 +465,11 @@ plot_homologue_group_pattern_comparison <- function(Sample_distribution, input_s
             ")
 }
 
-########################################
 
-
-defineVariablesUI <- function(Skyline_output){
-    ###START: Define UI components
-
-    # Create the UI components
-    shiny::fluidRow(
-        shiny::column(
-            6,
-            shiny::selectInput(
-                inputId = "removeSamples", #select if some samples will be removed from quantification
-                label = 'Remove samples from quantification?',
-                choices = unique(Skyline_output$Replicate_Name),
-                selected = NULL,
-                multiple = TRUE
-            )
-        ),
-
-        shiny::tags$br(), shiny::tags$br(), shiny::tags$br(), shiny::tags$br(),
-        shiny::column(
-            6,
-            shiny::sliderInput(
-                inputId = "removeRsquared", #keep only Molecule above this rsquared, zero means keep everything
-                label = 'Keep the the calibration curves above this rsquared (0 means keep everything)',
-                min = 0,
-                max = 1,
-                value = 0.80,
-                step = 0.05
-            )
-        )
-    )
-}
-#################################################
-# Various utilities and helper functions for CPquant
-
-
-#########################################################################################################
-#------------------------------------------ CPquant functions ------------------------------------------#
-#########################################################################################################
-
-### Function to perform deconvolution on a single data frame ###
-perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
-
-    df_matrix <- as.matrix(df)
-
-    print(paste("df_matrix dimensions:", dim(df_matrix)))
-    print(paste("combined_standard dimensions:", dim(combined_standard)))
-
-    if (nrow(combined_standard) != nrow(df_matrix)) {
-        stop("Dimensions of combined_standard and df are incompatible.")
-    }
-
-    # Reshape df_matrix if it has only one column or extract the first column if it has multiple
-    if (ncol(df_matrix) == 1) {
-        df_vector <- as.vector(df_matrix)
-    } else {
-        df_vector <- as.vector(df_matrix["Relative_Area"])  # Extract the first column for nnls
-    }
-
-    # Check for NA/NaN/Inf values in df_vector and combined_standard
-    if (any(is.na(df_vector)) || any(is.nan(df_vector)) || any(is.infinite(df_vector))) {
-        stop("df_vector contains NA/NaN/Inf values.")
-    }
-
-    if (any(is.na(combined_standard)) || any(is.nan(combined_standard)) || any(is.infinite(combined_standard))) {
-        stop("combined_standard contains NA/NaN/Inf values.")
-    }
-
-    # Perform nnls
-    # combined_standard is response factor and df_vector is Relative_Area
-    deconv <- nnls::nnls(combined_standard, df_vector)
-
-    # Extract deconvolution results
-    deconv_coef <- deconv$x
-
-
-    #Normalize the coefficients so they sum to 1
-    if (sum(deconv_coef) > 0) {
-        deconv_coef <- deconv_coef / sum(deconv_coef)
-    }else(deconv_coef <- 0)
-
-    # Calculate deconvolved values (which is the response factor) using matrix multiplication
-    deconv_resolved <- combined_standard %*% deconv_coef
-
-    # Calculate the sum of RF*frac
-    sum_deconv_RF <- as.matrix(CPs_standards_sum_RF) %*% deconv_coef
-
-
-
-
-
-    # Calculate the goodness of fit by coefficient of determination (R2)
-    # Calculate the total sum of squares (SST)
-    sst <- sum((df_vector - mean(df_vector))^2)
-    # Calculate the residual sum of squares (SSR)
-    ssr <- sum((df_vector - deconv_resolved/sum(deconv_resolved))^2)
-
-    # Calculate R-squared coefficient of determination
-    deconv_rsquared <- 1 - (ssr / sst)
-
-    # Calculate Mean Squared Error (MSE)
-    mse <- mean((df_vector - deconv_resolved/sum(deconv_resolved))^2)
-
-    # Calculate Root Mean Squared Error (RMSE)
-    rmse <- sqrt(mse)
-
-    #Chiq-square test: ensure that values are positive for chi-square test
-    # if (any(deconv_resolved < 0) || any(df_vector < 0)) {
-    #     warning("Non-positive values found, skipping chi-square test")
-    #     chisq_result <- NULL
-    # } else {
-    #     #adding a small constant to avoid 0 values
-    #     observed_corr <- df_vector + 1E-12
-    #     predicted_corr <- deconv_resolved + 1E-12
-    #     chisq_result <- chisq.test(x= observed_corr, p = predicted_corr/sum(predicted_corr), rescale.p = TRUE)
-    # }
-
-
-    # Kolmogorov-Smirnov Test
-    #ks_result <- ks.test(deconv_resolved, df_vector)
-
-
-
-    #combine results for output
-    combined_standard_names <- colnames(combined_standard)
-
-    names(deconv_coef) <- combined_standard_names
-
-
-    return(list(
-        sum_deconv_RF = sum_deconv_RF,
-        deconv_coef = deconv_coef,
-        deconv_resolved = deconv_resolved,
-        deconv_rsquared = deconv_rsquared
-        #chisq_result = chisq_result
-    ))
-}
-
-################################################################################
-
-
-
-
-##################################################
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
-ui <- shiny::navbarPage("Quantification by deconvolution from Skyline output",
+ui <- shiny::navbarPage("CPquant",
                         shiny::tabPanel("Quantification Inputs",
                                         shiny::fluidPage(shiny::sidebarLayout(
                                             shiny::sidebarPanel(
@@ -466,6 +482,7 @@ ui <- shiny::navbarPage("Quantification by deconvolution from Skyline output",
                                                                     choices = c("Yes, by avg area of blanks", "No"), selected = "No"),
                                                 shiny::radioButtons("correctWithRS", label = "Correct with RS area?",
                                                                     choices = c("Yes", "No"), selected = "No"),
+                                                shiny::uiOutput("recoveryUI"), # render UI if correctwithRS == "Yes"
                                                 shiny::radioButtons("calculateRecovery",
                                                                     label = "Calculate recovery? (req QC samples)",
                                                                     choices = c("Yes", "No"), selected = "No"),
@@ -590,6 +607,13 @@ ui <- shiny::navbarPage("Quantification by deconvolution from Skyline output",
 ################################################################################
 server <- function(input, output, session) {
 
+    # define RS
+    output$recoveryUI <- shiny::renderUI({
+        if(input$correctWithRS == "Yes") {
+            defineRecoveryUI(Skyline_output()) }
+    })
+    #chooseRS <- shiny::reactive(as.character(input$chooseRS))
+
     Skyline_output <- reactive({
         req(input$fileInput) #requires that the input is available
 
@@ -624,12 +648,19 @@ server <- function(input, output, session) {
 
         progress$set(value = 0.8, detail = "Applying corrections")
 
-        #  Normalize data based on 'Correct with RS' input
-        if (input$correctWithRS == "Yes" & any(df$Molecule_List == "RS")){
-            df <- df |>
-                dplyr::group_by(Replicate_Name) |>
-                dplyr::mutate(Area = Area / first(Area[Molecule_List== "RS" & Isotope_Label_Type == "Quan"])) |>
-                dplyr::ungroup()
+
+        # Normalize data based on 'Correct with RS' input
+        if (input$correctWithRS == "Yes" && any(df$Molecule_List == "RS")) {
+            # Only proceed with RS correction if chooseRS input is available
+            if (!is.null(input$chooseRS) && input$chooseRS != "") {
+                # Use input$chooseRS directly instead of the reactive
+                df <- df |>
+                    dplyr::group_by(Replicate_Name) |>
+                    dplyr::mutate(Area = Area / first(Area[Molecule == input$chooseRS &
+                                                               Molecule_List == "RS" &
+                                                               Isotope_Label_Type == "Quan"])) |>
+                    dplyr::ungroup()
+            }
         }
 
         # Calculate the average blank value
@@ -669,6 +700,7 @@ server <- function(input, output, session) {
 
     removeRsquared <- shiny::eventReactive(input$go, {as.numeric(input$removeRsquared)})
     removeSamples <- shiny::eventReactive(input$go, {as.character(input$removeSamples)})
+    #chooseRS <- shiny::eventReactive(input$go, {as.character(input$chooseRS)})
     Samples_Concentration <- reactiveVal() # Create a reactive value to store deconvolution object into Samples_Concentration() to allow other to access after observeEvent.
 
 
@@ -788,7 +820,7 @@ server <- function(input, output, session) {
             })
 
             ###### Plot CalibrationRemoved ######
-            output$CalibrationRemoved <- DT::renderDataTable({
+            output$CalibrationRemoved <- DT::renderDT({
                 CPs_standards |>
                     dplyr::filter(RF <= 0) |>
                     dplyr::mutate(coef = purrr::map(models, coef)) |>
@@ -1186,3 +1218,5 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
+

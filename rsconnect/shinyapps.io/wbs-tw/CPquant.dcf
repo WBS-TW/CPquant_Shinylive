@@ -1,0 +1,13 @@
+name: CPquant
+title: CPquant
+username: wbs-tw
+account: wbs-tw
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14200667
+bundleId: 9918852
+url: https://wbs-tw.shinyapps.io/CPquant/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|AllQuantResults|README.md|docs
