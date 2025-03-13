@@ -204,7 +204,7 @@ plot_skyline_output <- function(Skyline_output){
 
 #############################################################################
 
-plot_calibration_curves <- function(CPs_standards) {
+plot_calibration_curves <- function(CPs_standards, quantUnit) {
     # Unnest the data first
     CPs_standards_unnested <- CPs_standards |>
         dplyr::filter(RF > 0) |>
@@ -297,7 +297,8 @@ plot_calibration_curves <- function(CPs_standards) {
                 groupclick = "togglegroup",  # Changed from "toggleitem" to "togglegroup"
                 tracegroupgap = 10,
                 itemsizing = "constant"
-            )
+            ),
+            xaxis = list(title = paste0("Analyte Concentration/Amount (", quantUnit, ")"))  # Use the reactive value for x-axis label
         )
 
     return(final_plot)
@@ -476,7 +477,7 @@ ui <- shiny::navbarPage("CPquant",
                                                 width = 3,
                                                 shiny::fileInput("fileInput", "Import excel file from Skyline",
                                                                  accept = c('xlsx')),
-                                                shiny::textInput("quantificationUnit", "Enter Quantification unit:"),
+                                                shiny::textInput("quantificationUnit", "(Optional) Concentration unit:"),
                                                 shiny::radioButtons("blankSubtraction",
                                                                     label = "Subtraction with blank?",
                                                                     choices = c("Yes, by avg area of blanks", "No"), selected = "No"),
@@ -614,6 +615,11 @@ server <- function(input, output, session) {
     })
     #chooseRS <- shiny::reactive(as.character(input$chooseRS))
 
+    # Create a reactive object that depends on the quantificationUnit input
+    quantUnit <- reactive({
+        input$quantificationUnit
+    })
+
     Skyline_output <- reactive({
         req(input$fileInput) #requires that the input is available
 
@@ -628,6 +634,7 @@ server <- function(input, output, session) {
         df <- readxl::read_excel(input$fileInput$datapath) #outputs a tibble
 
         progress$set(value = 0.6, detail = "Processing data")
+        # Tidy the input file
         df <- df |>
             dplyr::rename(Replicate_Name = tidyr::any_of(c("Replicate Name", "ReplicateName"))) |>
             dplyr::rename(Sample_Type = tidyr::any_of(c("Sample Type", "SampleType"))) |>
@@ -816,7 +823,7 @@ server <- function(input, output, session) {
             ###### Plot calibration curves ######
             # plots.R function
             output$CalibrationCurves <- plotly::renderPlotly({
-                plot_calibration_curves(CPs_standards)
+                plot_calibration_curves(CPs_standards, quantUnit())
             })
 
             ###### Plot CalibrationRemoved ######
@@ -866,14 +873,14 @@ server <- function(input, output, session) {
 
 
 
-            # This performs deconvolution on all mixtures together.
-
+            # This performs deconvolution on all mixtures together
             deconvolution <- combined_sample |>
                 #perform_deconvolution on only Relative_Area in the nested data frame
                 dplyr::mutate(result = purrr::map(data, ~ perform_deconvolution(dplyr::select(.x, Relative_Area), combined_standard, CPs_standards_sum_RF))) |>
                 dplyr::mutate(sum_Area = purrr::map_dbl(data, ~sum(.x$Area))) |>
                 dplyr::mutate(sum_deconv_RF = as.numeric(purrr::map(result, purrr::pluck("sum_deconv_RF")))) |>
                 dplyr::mutate(Concentration = sum_Area/sum_deconv_RF) |>
+                dplyr::mutate(Unit = quantUnit()) |>
                 dplyr::mutate(deconv_coef = purrr::map(result, ~as_tibble(list(deconv_coef = .x$deconv_coef, Batch_Name = names(.x$deconv_coef))))) |>
                 dplyr::mutate(deconv_rsquared = as.numeric(purrr::map(result, purrr::pluck("deconv_rsquared")))) |>
                 dplyr::mutate(deconv_resolved = purrr::map(result, ~tibble::as_tibble(list(deconv_resolved = .x$deconv_resolved, Molecule = rownames(.x$deconv_resolved))))) |>
@@ -915,7 +922,7 @@ server <- function(input, output, session) {
                 # Write data to worksheets
                 openxlsx::writeData(wb, "Quantification",
                                     deconvolution |>
-                                        dplyr::select(Replicate_Name, Sample_Type, Concentration, deconv_rsquared) |>
+                                        dplyr::select(Replicate_Name, Sample_Type, Concentration, Unit, deconv_rsquared) |>
                                         dplyr::mutate(deconv_rsquared = round(deconv_rsquared, 3)))
                 openxlsx::writeData(wb, "StandardsContribution",
                                     deconvolution |>
@@ -946,7 +953,7 @@ server <- function(input, output, session) {
         # Render table
         output$quantTable <- DT::renderDT({
             deconvolution |>
-                dplyr::select(Replicate_Name, Sample_Type, Concentration, deconv_rsquared) |> #select to make compact df for pivot_wider
+                dplyr::select(Replicate_Name, Sample_Type, Concentration, Unit, deconv_rsquared) |> #select to make compact df for pivot_wider
                 dplyr::mutate(deconv_rsquared = round(deconv_rsquared, 3)) |>
                 DT::datatable(
                     filter = "top", extensions = c("Buttons", "Scroller"),
@@ -1057,9 +1064,8 @@ server <- function(input, output, session) {
                         MDL_sumPCA = mean(Concentration) + 3 * sd(Concentration, na.rm = TRUE),
                         number_of_blanks = dplyr::n_distinct(Replicate_Name)
                     )
-            }
-            else if (input$blankSubtraction == "Yes, by avg area of blanks"){
-                DL_data <- deconvolution |>
+            } else if (input$blankSubtraction == "Yes, by avg area of blanks"){
+                MDL_data <- deconvolution |>
                     dplyr::filter(Sample_Type == "Blank") |>
                     dplyr::summarize(
                         MDL_sumPCA = 3 * sd(Concentration, na.rm = TRUE),
@@ -1218,5 +1224,8 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
+
+
 
 
