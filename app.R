@@ -1,4 +1,4 @@
-# This version was copied 2025-02-05
+# This version was copied 20250402
 # Uses Shinylive to deploy static web app
 # see: https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html
 
@@ -14,10 +14,7 @@ library(DT)
 library(plotly)
 library(purrr)
 library(markdown)
-#library(openxlsx)
-library(writexl)
-
-####################################################
+library(openxlsx)
 
 # Various utilities and helper functions for CPquant
 
@@ -126,8 +123,8 @@ perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
 
 ################################################################################
 
-
-
+## CPquant UI Components ##
+###########################
 
 defineVariablesUI <- function(Skyline_output){
     ###START: Define UI components
@@ -179,6 +176,8 @@ defineRecoveryUI <- function(Skyline_output){
         ))
 }
 ### END FUNCTION
+################################################################################
+
 
 
 #############################################################################
@@ -467,7 +466,8 @@ plot_homologue_group_pattern_comparison <- function(Sample_distribution, input_s
             ")
 }
 
-############################################################################################################
+
+####################################################################################
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -604,7 +604,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("R/instructions_CPquant.md")
+                                    shiny::includeMarkdown("instructions_CPquant.md")
                                 )
                             )
                         )
@@ -1235,6 +1235,9 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
+
+
 
 
 
