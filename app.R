@@ -570,17 +570,22 @@ ui <- shiny::navbarPage("CPquant",
                                 ),
                                 column(
                                     width = 10,
-                                    shiny::conditionalPanel(
-                                        condition = "input.plotHomologueGroups == 'All Samples Overview'",
-                                        shiny::plotOutput("plotHomologuePatternStatic", height = "80vh", width = "100%")
-                                    ),
-                                    shiny::conditionalPanel(
-                                        condition = "input.plotHomologueGroups == 'Samples Overlay'",
-                                        plotly::plotlyOutput("plotHomologuePatternOverlay", height = "80vh", width = "100%")
-                                    ),
-                                    shiny::conditionalPanel(
-                                        condition = "input.plotHomologueGroups == 'Samples Panels'",
-                                        plotly::plotlyOutput("plotHomologuePatternComparisons", height = "80vh", width = "100%")
+                                    # Add a div with margin/padding for spacing
+                                    shiny::tags$div(
+                                        style = "margin-top: 20px;", # This adds space at the top
+
+                                        shiny::conditionalPanel(
+                                            condition = "input.plotHomologueGroups == 'All Samples Overview'",
+                                            shiny::plotOutput("plotHomologuePatternStatic", height = "80vh", width = "100%")
+                                        ),
+                                        shiny::conditionalPanel(
+                                            condition = "input.plotHomologueGroups == 'Samples Overlay'",
+                                            plotly::plotlyOutput("plotHomologuePatternOverlay", height = "80vh", width = "100%")
+                                        ),
+                                        shiny::conditionalPanel(
+                                            condition = "input.plotHomologueGroups == 'Samples Panels'",
+                                            plotly::plotlyOutput("plotHomologuePatternComparisons", height = "80vh", width = "100%")
+                                        )
                                     )
                                 )
                             )
@@ -599,7 +604,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("instructions_CPquant.md")
+                                    shiny::includeMarkdown("R/instructions_CPquant.md")
                                 )
                             )
                         )
@@ -632,7 +637,7 @@ server <- function(input, output, session) {
 
         # Read the Skyline output Excel file
         progress$set(value = 0.3, detail = "Reading Excel file")
-        df <- readxl::read_excel(input$fileInput$datapath) #outputs a tibble
+        df <- readxl::read_excel(input$fileInput$datapath, guess_max = 5000, na = c("", "NA", "#N/A", "N/A")) #outputs a tibble
 
         progress$set(value = 0.6, detail = "Processing data")
         # Tidy the input file
