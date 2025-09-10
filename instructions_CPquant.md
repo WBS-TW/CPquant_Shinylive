@@ -8,6 +8,10 @@ the relative composition needed from different standards to match the measured h
 The underlying calculations are based on the CPCrawler R script by Perkons et al (Food Chem, doi/10.1016/j.foodchem.2019.125100).
 In CPquant, the deconvolution is performed using the nnls package (https://cran.r-project.org/web/packages/nnls).  
 
+- CPquant quantification works with both single chain and mixture standards.  
+- We recommend to use 5 calibration levels for each standard. These needs to be named in the `Batch Name` column and their concentration levels `Analyte Concentration` added according to below instructions from the input file which is exported from Skyline.  
+- If recovery needs to be calculated, then a _Quality Control_ sample needs to be added.
+
 __The calculated concentrations are for those in the extract. The user can then export the results to excel and perform additional calculations to derive the concentrations in the samples__
   
   
@@ -36,7 +40,7 @@ After loading the excel, allow for the Area plot to show up before pressing the 
 After loading the data, the user can choose the options:  
 __Subtraction by blank?__: If "Yes, by avg area of blanks", then the area for each Molecule will be subtracted with the average of all blank samples.  
 __Correct with RS area?__: If "Yes", then the area of each Molecule will the normalized to the recovery standard (RS) area for each sample.  
-__Calculate recovery?__: If "Yes", requires samples with the `Sample Type` designated as "Quality Control" that include the same concentrations of IS and RS.  
+__Calculate recovery?__: If "Yes", requires samples with the `Sample Type` designated as "Quality Control" that include the spiked concentrations of IS and RS corresponding mount/concentrations.  
 __Calculate MDL?__: If "Yes", then calculates the method detection limits based on blank samples.  
 If no blank subtraction then MDL = avg + 3 * standard deviation of blank samples.  
 If blank subtraction then MDL = 3 * standard deviation of blank samples.  
@@ -54,7 +58,7 @@ __Proceed__: pressing this button will quantify the samples based on the deconvo
 ### Quantification process  
 The process starts by creating calibration curves for each carbon chain group for each standard mixture. 
 The Batch Name in the excel file determines which carbon chain group to be included for each standard mixture. A linear regression will be fitted and the slope is used as the response factor (RF).
-If the R-squared of the goodnes of fit for a homologue group for a standard series (calibration curve) is below the user input threshold (modified in the first tab), then the homologue group in that standard is not considered for subsequent quantification.  
+If the R-squared of the goodness of fit for a homologue group for a standard series (calibration curve) is below the user input threshold (modified in the first tab), then the homologue group in that standard is not considered for subsequent quantification.  
 
 
 
@@ -64,6 +68,7 @@ The display might take some time before results show up here so be patient.
 __Std Calibration Curves__: The calibration curves for different standards will be shown. Only those with rsquared above the initial cutoff will be shown.  
 __Removed from Calibration__: A table showing individual homologue groups from specific standards that are removed from the quantification process, due to negative RF or calibration curve R2 values below limit.   
 __Quan to Qual ratio__: Violin plots showing the ratio Quan/Qual area to detect outliers and thus help in assessing quality of data.  
+__Measured vs Theor Quan/Qual ratio__: Plot showing the measured Quan/Qual ratio divided by the theoretical Quan/Qual ratio. Ideally, the ratio should be around 1. Outlier ratios (<0.3 or >3) are marked in red.  
   
   
 ## Quantification summary  
