@@ -1,4 +1,4 @@
-# This version was copied 20250402
+# This version was copied 20250910
 # Uses Shinylive to deploy static web app
 # see: https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html
 
@@ -6,6 +6,7 @@ library(shiny)
 library(htmlwidgets)
 library(ggplot2)
 library(readxl)
+library(stringr)
 library(nnls)
 library(dplyr)
 library(tibble)
@@ -20,8 +21,9 @@ library(openxlsx)
 
 
 #########################################################################################################
-#------------------------------------------ CPquant functions ------------------------------------------#
+#------------------------------------------ CPquant utils ------------------------------------------#
 #########################################################################################################
+
 
 ### Function to perform deconvolution on a single data frame ###
 perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
@@ -121,6 +123,9 @@ perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
     ))
 }
 
+
+
+
 ################################################################################
 
 ## CPquant UI Components ##
@@ -146,13 +151,20 @@ defineVariablesUI <- function(Skyline_output){
         shiny::column(
             6,
             shiny::sliderInput(
-                inputId = "removeRsquared", #keep only Molecule above this rsquared, zero means keep everything
+                inputId = "removeRsquared", #keep only Molecule from standard calibration curves above this rsquared, zero means keep everything
                 label = 'Keep the the calibration curves above this rsquared (0 means keep everything)',
                 min = 0,
                 max = 1,
-                value = 0.80,
+                value = 0.70,
                 step = 0.05
             )
+            # shiny::column(
+            #     6,
+            #     shiny::checkboxInput(
+            #           inputId = "zerointercept", #force y-intercept through zero
+            #           label = "Set intercept to zero",
+            #           value = FALSE
+            #     )
         )
     )
 }
@@ -175,12 +187,10 @@ defineRecoveryUI <- function(Skyline_output){
             )
         ))
 }
-### END FUNCTION
-################################################################################
 
 
-
-#############################################################################
+## CPquant plots ##
+###########################
 plot_skyline_output <- function(Skyline_output){
 
     Skyline_output |>
@@ -329,9 +339,45 @@ plot_quanqualratio <- function(Skyline_output_filt) {
         plotly::layout(title = 'Quan-to-Qual Ratio',
                        xaxis = list(title = 'Replicate Name'),
                        yaxis = list(title = 'Quan-to-Qual Ratio'))
+}
 
+##############################################################################
+
+plot_meas_vs_theor_ratio <- function(Skyline_output_filt) {
+
+    Skyline_output_filt |>
+        dplyr::group_by(Replicate_Name, Molecule) |>
+        dplyr::mutate(Quan_Area = ifelse(Isotope_Label_Type == "Quan", Area, NA)) |>
+        tidyr::fill(Quan_Area, .direction = "downup") |>
+        dplyr::mutate(QuanMZ = ifelse(Isotope_Label_Type == "Quan", Chromatogram_Precursor_MZ, NA)) |>
+        tidyr::fill(QuanMZ, .direction = "downup") |>
+        dplyr::mutate(QuanQualRatio = ifelse(Isotope_Label_Type == "Qual", Quan_Area/Area, 1)) |>
+        tidyr::replace_na(list(QuanQualRatio = 0)) |>
+        dplyr::mutate(QuanQualMZ = paste0(QuanMZ,"/",Chromatogram_Precursor_MZ)) |>
+
+        dplyr::mutate(Quan_Rel_Ab = ifelse(Isotope_Label_Type == "Quan", Rel_Ab, NA)) |>
+        tidyr::fill(Quan_Rel_Ab, .direction = "downup") |>
+        dplyr::mutate(QuanQual_Rel_Ab_Ratio = ifelse(Isotope_Label_Type == "Qual", Quan_Rel_Ab/Rel_Ab, 1)) |>
+        tidyr::replace_na(list(QuanQual_Rel_Ab_Ratio = 0)) |>
+        dplyr::ungroup() |>
+        dplyr::mutate(MeasVSTheo = QuanQualRatio/QuanQual_Rel_Ab_Ratio) |>
+        dplyr::mutate(Is_Outlier = MeasVSTheo > 3 | MeasVSTheo < 0.3) |>
+        dplyr::mutate(Is_Outlier = factor(Is_Outlier, levels = c(FALSE, TRUE), labels = c("Within Limit", "Outlier"))) |>
+        dplyr::select(Replicate_Name, Sample_Type, Molecule_List, Molecule, QuanQualMZ, QuanQualRatio, QuanQual_Rel_Ab_Ratio, MeasVSTheo, Is_Outlier) |>
+        plotly::plot_ly(x = ~Replicate_Name, y = ~MeasVSTheo,
+                        type = 'scatter', mode = 'markers',
+                        color = ~Is_Outlier,
+                        colors = c('blue', 'red'),
+                        text = ~paste("Replicate:", Replicate_Name,
+                                      "<br>Homologue Group: ", Molecule,
+                                      "<br>Measured against Theoretical Ratio:", round(MeasVSTheo, 1)),
+                        marker = list(size = 10)) |>
+        layout(title = "Measured/Theoretical ratio >3 or <0.3 are marked in red (ratio of 1 means perfect match",
+               xaxis = list(title = "Sample Name"),
+               yaxis = list(title = "MeasVSTheo"))
 
 }
+
 
 ##############################################################################
 
@@ -339,9 +385,9 @@ plot_sample_contribution <- function(deconvolution) {
 
     # How much contribution of each sample to the final deconvoluted homologue group pattern
     plot_data <- deconvolution |>
-        unnest(deconv_coef) |>
-        unnest_longer(c(deconv_coef, Batch_Name)) |>
-        select(Replicate_Name, Batch_Name, deconv_coef)
+        tidyr::unnest(deconv_coef) |>
+        tidyr::unnest_longer(c(deconv_coef, Batch_Name)) |>
+        dplyr::select(Replicate_Name, Batch_Name, deconv_coef)
 
     # Create the plotly stacked bar plot
     plotly::plot_ly(plot_data,
@@ -466,10 +512,10 @@ plot_homologue_group_pattern_comparison <- function(Sample_distribution, input_s
             ")
 }
 
-
-####################################################################################
+#############################################################################
 
 options(shiny.maxRequestSize = 500 * 1024^2)
+
 
 ui <- shiny::navbarPage("CPquant",
                         shiny::tabPanel("Quantification Inputs",
@@ -492,7 +538,7 @@ ui <- shiny::navbarPage("CPquant",
                                                                     label = "Calculate MDL? (req blank samples)",
                                                                     choices = c("Yes", "No"), selected = "No"),
                                                 shiny::radioButtons("standardTypes", label = "Types of standards",
-                                                                    choices = c("Group Mixtures"), selected = "Group Mixtures"), #will add single chain std later
+                                                                    choices = c("Group Mixtures"), selected = "Group Mixtures"), #work for both single chain and multiple chain mixtures
                                                 shiny::tags$div(
                                                     title = "Wait until import file is fully loaded before pressing!",
                                                     shiny::actionButton('go', 'Proceed', width = "100%")
@@ -514,7 +560,8 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::radioButtons("navSummary", "Choose tab:",
                                                     choices = c("Std Calibration Curves",
                                                                 "Removed from Calibration",
-                                                                "Quan to Qual ratio"),
+                                                                "Quan to Qual ratio",
+                                                                "Measured vs Theor Quan/Qual ratio"),
                                                     selected = "Std Calibration Curves")
                             ),
                             shiny::mainPanel(
@@ -533,6 +580,11 @@ ui <- shiny::navbarPage("CPquant",
                                     condition = "input.navSummary == 'Quan to Qual ratio'",
                                     tags$h3("Violin plots of Quant/Qual ions"),
                                     plotly::plotlyOutput("RatioQuantToQual", height = "80vh", width = "100%")
+                                ),
+                                shiny::conditionalPanel(
+                                    condition = "input.navSummary == 'Measured vs Theor Quan/Qual ratio'",
+                                    tags$h3("Measured divided by Theoretical Quant/Qual ratios"),
+                                    plotly::plotlyOutput("MeasVSTheor", height = "80vh", width = "100%")
                                 )
                             )
                         ),
@@ -604,7 +656,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("instructions_CPquant.md")
+                                    shiny::includeMarkdown(system.file("instructions_CPquant.md", package = "CPxplorer"))
                                 )
                             )
                         )
@@ -657,7 +709,12 @@ server <- function(input, output, session) {
                           Cl_homologue = stringr::str_extract(Molecule, "Cl\\d+"),
                           C_number = as.numeric(stringr::str_extract(C_homologue, "\\d+")),
                           Cl_number = as.numeric(stringr::str_extract(Cl_homologue, "\\d+")),
-                          PCA = stringr::str_c(C_homologue, Cl_homologue, sep = ""))
+                          PCA = stringr::str_c(C_homologue, Cl_homologue, sep = "")) |>
+            dplyr::rename(Transition_Note = `Transition Note`) |>
+            dplyr::mutate(Rel_Ab = as.numeric(map_chr( # Extract relative abundance from second set of curly braces
+                Transition_Note, ~ {matches <- str_match_all(.x, "\\{([^}]*)\\}")[[1]]
+                if (nrow(matches) >= 2) matches[2, 2] else NA_character_
+                })))
 
         progress$set(value = 0.8, detail = "Applying corrections")
 
@@ -713,7 +770,6 @@ server <- function(input, output, session) {
 
     removeRsquared <- shiny::eventReactive(input$go, {as.numeric(input$removeRsquared)})
     removeSamples <- shiny::eventReactive(input$go, {as.character(input$removeSamples)})
-    #chooseRS <- shiny::eventReactive(input$go, {as.character(input$chooseRS)})
     Samples_Concentration <- reactiveVal() # Create a reactive value to store deconvolution object into Samples_Concentration() to allow other to access after observeEvent.
 
 
@@ -777,7 +833,7 @@ server <- function(input, output, session) {
                 dplyr::group_by(Batch_Name, Sample_Type, Molecule, Molecule_List, C_number, Cl_number, PCA, Quantification_Group, C_min, C_max) |>
                 tidyr::nest() |>
                 dplyr::filter(C_number >= C_min & C_number <= C_max) |> # make sure C_number stays within the Quantification_Group chain length
-                dplyr::mutate(models = purrr::map(data, ~lm(Area ~ Analyte_Concentration, data = .x))) |>
+                dplyr::mutate(models = purrr::map(data, ~lm(Area ~ Analyte_Concentration, data = .x))) |> #this includes intercept, if omitting intercept: Area~Analyte_Concentration -1
                 dplyr::mutate(coef = purrr::map(models, coef)) |>
                 dplyr::mutate(RF = purrr::map_dbl(models, ~ coef(.x)["Analyte_Concentration"]))|> #get the slope which will be the RF
                 dplyr::mutate(intercept = purrr::map(coef, purrr::pluck("(Intercept)"))) |>
@@ -794,10 +850,8 @@ server <- function(input, output, session) {
                 dplyr::ungroup()
 
 
-
             # Prepare for deconvolution of samples
             progress$set(value = 0.6, detail = "Preparing sample data")
-
 
 
             CPs_samples <- Skyline_output_filt |>
@@ -847,9 +901,15 @@ server <- function(input, output, session) {
 
 
             ###### Plot Quan/Qual ratios ######
-            #plots.R function
+            #CPquant_plots.R function
             output$RatioQuantToQual <- plotly::renderPlotly({
                 plot_quanqualratio(Skyline_output_filt)
+            })
+
+            ##### Plot MeasVSTheor ratios ######
+            #CPquant_plots.R function
+            output$MeasVSTheor <- plotly::renderPlotly({
+                plot_meas_vs_theor_ratio(Skyline_output_filt)
             })
 
 
@@ -1152,14 +1212,14 @@ server <- function(input, output, session) {
 
             if (input$plotHomologueGroups == "All Samples Overview") {
                 output$plotHomologuePatternStatic <- shiny::renderPlot({
-                    ggplot(Sample_distribution, aes(x = Molecule, y = Relative_Area, fill = C_homologue)) +
-                        geom_col() +
-                        facet_wrap(~Replicate_Name) +
-                        theme_minimal() +
-                        theme(axis.text.x = element_blank()) +
-                        labs(title = "Relative Distribution (before deconvolution)",
-                             x = "Homologue",
-                             y = "Relative Distribution")
+                    ggplot2::ggplot(Sample_distribution, aes(x = Molecule, y = Relative_Area, fill = C_homologue)) +
+                        ggplot2::geom_col() +
+                        ggplot2::facet_wrap(~Replicate_Name) +
+                        ggplot2::theme_minimal() +
+                        ggplot2::theme(axis.text.x = element_blank()) +
+                        ggplot2::labs(title = "Relative Distribution (before deconvolution)",
+                                      x = "Homologue",
+                                      y = "Relative Distribution")
                 })
             } else if (input$plotHomologueGroups == "Samples Overlay") {
                 output$plotHomologuePatternOverlay <- plotly::renderPlotly({
@@ -1168,25 +1228,25 @@ server <- function(input, output, session) {
 
                     # Filter for selected samples
                     selected_samples <- Sample_distribution |>
-                        filter(Replicate_Name %in% input$selectedSamples) |>
-                        mutate(Molecule = factor(Molecule, levels = unique(Molecule[order(C_number, Cl_number)])))
+                        dplyr::filter(Replicate_Name %in% input$selectedSamples) |>
+                        dplyr::mutate(Molecule = factor(Molecule, levels = unique(Molecule[order(C_number, Cl_number)])))
 
                     req(nrow(selected_samples) > 0)
 
                     # Create a basic bar plot
-                    p <- plot_ly(data = selected_samples,
-                                 x = ~Molecule,
-                                 #y = ~resolved_distribution,
-                                 y = ~Relative_Area,
-                                 color = ~Replicate_Name,
-                                 type = "bar",
-                                 text = ~paste(
-                                     "Sample:", Replicate_Name,
-                                     "<br>Homologue:", Molecule,
-                                     "<br>Distribution:", round(Relative_Area, 3),
-                                     "<br>C-atoms:", C_homologue
-                                 ),
-                                 hoverinfo = "text"
+                    p <- plotly::plot_ly(data = selected_samples,
+                                         x = ~Molecule,
+                                         #y = ~resolved_distribution,
+                                         y = ~Relative_Area,
+                                         color = ~Replicate_Name,
+                                         type = "bar",
+                                         text = ~paste(
+                                             "Sample:", Replicate_Name,
+                                             "<br>Homologue:", Molecule,
+                                             "<br>Distribution:", round(Relative_Area, 3),
+                                             "<br>C-atoms:", C_homologue
+                                         ),
+                                         hoverinfo = "text"
                     ) |>
                         layout(
                             #title = "Sample Distribution Overlay",
@@ -1235,13 +1295,3 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
-
-
-
-
-
-
-
-
-
-

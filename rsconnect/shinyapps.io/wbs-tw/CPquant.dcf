@@ -5,7 +5,7 @@ account: wbs-tw
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 14200667
-bundleId: 10043857
+bundleId: 10886916
 url: https://wbs-tw.shinyapps.io/CPquant/
 version: 1
 asMultiple: FALSE
