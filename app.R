@@ -2,9 +2,9 @@
 # Uses Shinylive to deploy static web app
 # see: https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html
 
+library(ggplot2)
 library(shiny)
 library(htmlwidgets)
-library(ggplot2)
 library(readxl)
 library(stringr)
 library(nnls)
@@ -16,6 +16,8 @@ library(plotly)
 library(purrr)
 library(markdown)
 library(openxlsx)
+library(S7)
+
 
 # Various utilities and helper functions for CPquant
 
@@ -23,7 +25,6 @@ library(openxlsx)
 #########################################################################################################
 #------------------------------------------ CPquant_utils.R ------------------------------------------#
 #########################################################################################################
-
 
 ### Function to perform deconvolution on a single data frame ###
 perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
@@ -130,6 +131,7 @@ perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
 ##--------------------------- CPquant UI Components --------------------------##
 ################################################################################
 
+
 defineVariablesUI <- function(Skyline_output){
     ###START: Define UI components
 
@@ -212,6 +214,7 @@ defineCalcrecoveryUI <- function(Skyline_output){
 ##------------------------------ CPquant plots -------------------------------##
 ################################################################################
 #############################################################################
+#############################################################################
 plot_skyline_output <- function(Skyline_output){
 
     Skyline_output |>
@@ -270,7 +273,7 @@ plot_calibration_curves <- function(CPs_standards, quantUnit) {
                     "Molecule:", Molecule,
                     "<br>Area:", round(Area, 2),
                     "<br>Concentration:", round(Analyte_Concentration, 2),
-                    "<br>R2:", round(rsquared, 3)
+                    "<br>R2:", round(cal_rsquared, 3)
                 ),
                 hoverinfo = 'text'
             ) |>
@@ -697,7 +700,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("./instructions_CPquant.md")
+                                    shiny::includeMarkdown(system.file("instructions_CPquant.md", package = "CPxplorer"))
                                 )
                             )
                         )
@@ -893,13 +896,13 @@ server <- function(input, output, session) {
                 dplyr::mutate(coef = purrr::map(models, coef)) |>
                 dplyr::mutate(RF = purrr::map_dbl(models, ~ coef(.x)["Analyte_Concentration"]))|> #get the slope which will be the RF
                 dplyr::mutate(intercept = purrr::map(coef, purrr::pluck("(Intercept)"))) |>
-                dplyr::mutate(rsquared = purrr::map(models, summary)) |> #first create a data frame list with the model
-                dplyr::mutate(rsquared = purrr::map(rsquared, purrr::pluck("r.squared"))) |> # then pluck only the r.squared value
+                dplyr::mutate(cal_rsquared = purrr::map(models, summary)) |> #first create a data frame list with the model
+                dplyr::mutate(cal_rsquared = purrr::map(cal_rsquared, purrr::pluck("r.squared"))) |> # then pluck only the r.squared value
                 dplyr::select(-coef) |>  # remove coef variable since it has already been plucked
-                tidyr::unnest(c(RF, intercept, rsquared)) |>  #removing the list type for these variables
+                tidyr::unnest(c(RF, intercept, cal_rsquared)) |>  #removing the list type for these variables
                 dplyr::mutate(RF = if_else(RF < 0, 0, RF)) |> # replace negative RF with 0
-                dplyr::mutate(rsquared = ifelse(is.nan(rsquared), 0, rsquared)) |>
-                dplyr::mutate(RF = if_else(rsquared < removeRsquared(), 0, RF)) |> #replace RF with 0 if rsquared is below removeRsquared()
+                dplyr::mutate(cal_rsquared = ifelse(is.nan(cal_rsquared), 0, cal_rsquared)) |>
+                dplyr::mutate(RF = if_else(cal_rsquared < removeRsquared(), 0, RF)) |> #replace RF with 0 if rsquared is below removeRsquared()
                 dplyr::ungroup() |>
                 dplyr::group_by(Batch_Name) |> #grouping by the standards
                 dplyr::mutate(Sum_RF_group = sum(RF, na.rm = TRUE)) |> #the sum RF per standard
@@ -948,7 +951,7 @@ server <- function(input, output, session) {
                     dplyr::mutate(coef = purrr::map(models, coef)) |>
                     dplyr::mutate(RF = purrr::map_dbl(models, ~ coef(.x)["Analyte_Concentration"]))|> #get the slope which will be the RF
                     dplyr::mutate(intercept = purrr::map(coef, purrr::pluck("(Intercept)"))) |>
-                    dplyr::select(Batch_Name, Molecule, Quantification_Group,RF, intercept,  rsquared) |>
+                    dplyr::select(Batch_Name, Molecule, Quantification_Group,RF, intercept,  cal_rsquared) |>
                     tidyr::unnest(c(RF, intercept)) |>
                     mutate(across(where(is.numeric), ~ signif(.x, digits = 4))) |>
                     DT::datatable(options = list(pageLength = 40))
@@ -1121,7 +1124,7 @@ server <- function(input, output, session) {
 
 
             RECOVERY <- recovery_data |>  # Calculate recovery
-                dplyr::filter(Molecule_List %in% c("RS", "IS") & !(Molecule_List == "RS" & Molecule != input$chooseRS2)) |> #remove not chosen RS
+                dplyr::filter(Molecule_List %in% c("RS", "IS") & !(Molecule_List == "RS" & Molecule != input$chooseRS)) |> #remove not chosen RS
                 tidyr::pivot_wider(
                     id_cols = c(Replicate_Name, Sample_Type),
                     names_from = Molecule_List,

@@ -1,16 +1,8 @@
 # CPquant_Shinylive
   
-Some tutorial for deploying shinylive in github:  
-https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html  
-https://github.com/RamiKrispin/shinylive-r  
-  
-  
-  
-Creation of this serverless github pages was made using the following steps from the above tutorials:  
-  
-library(shinylive)  
-library(httpuv)  
-shinylive::export(appdir = "..FULLPATH/CPquant_Shinylive/", destdir = "docs")  
-where ..FULLPATH is the path in the local computer  
+A Shinylive version of the CPquant module of CPxplorer.  
 
-httpuv::runStaticServer("docs/", port = 8008)
+Publication:  
+Streamlining Quantification and Data Harmonization of Polychlorinated Alkanes Using a Platform-Independent Workflow  
+Beloki Ezker I, Yuan B, Borgen A, Liu J, Wang Y, Wang T.  
+Environmental Science & Technology, DOI: 10.1021/acs.est.5c04928  
