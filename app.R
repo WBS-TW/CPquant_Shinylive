@@ -700,7 +700,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown(system.file("instructions_CPquant.md", package = "CPxplorer"))
+                                    shiny::includeMarkdown("./instructions_CPquant.md")
                                 )
                             )
                         )

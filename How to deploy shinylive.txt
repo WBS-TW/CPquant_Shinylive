@@ -1,3 +1,8 @@
+Change code string: shiny::includeMarkdown("./instructions_CPquant.md")
+
+
+
+
 Some tutorial for deploying shinylive in github:
 https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html
 https://github.com/RamiKrispin/shinylive-r
