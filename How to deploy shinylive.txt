@@ -1,4 +1,4 @@
-Change code string: shiny::includeMarkdown("./instructions_CPquant.md")
+Change code string: shiny::includeMarkdown("instructions_CPquant.md")
 
 
 
