@@ -1,6 +1,3 @@
-# This version was copied 20250910
-# Uses Shinylive to deploy static web app
-# see: https://hbctraining.github.io/Training-modules/RShiny/lessons/shinylive.html
 
 library(ggplot2)
 library(shiny)
@@ -19,11 +16,12 @@ library(openxlsx)
 library(S7)
 
 
+
 # Various utilities and helper functions for CPquant
 
 
 #########################################################################################################
-#------------------------------------------ CPquant_utils.R ------------------------------------------#
+#------------------------------------------ CPquant functions ------------------------------------------#
 #########################################################################################################
 
 ### Function to perform deconvolution on a single data frame ###
@@ -124,13 +122,13 @@ perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF) {
     ))
 }
 
+################################################################################
 
 
 
 ################################################################################
 ##--------------------------- CPquant UI Components --------------------------##
 ################################################################################
-
 
 defineVariablesUI <- function(Skyline_output){
     ###START: Define UI components
@@ -209,12 +207,15 @@ defineCalcrecoveryUI <- function(Skyline_output){
 }
 ### END FUNCTION
 
+################################################################################
+
+
 
 ################################################################################
 ##------------------------------ CPquant plots -------------------------------##
 ################################################################################
-#############################################################################
-#############################################################################
+
+
 plot_skyline_output <- function(Skyline_output){
 
     Skyline_output |>
@@ -536,12 +537,16 @@ plot_homologue_group_pattern_comparison <- function(Sample_distribution, input_s
             ")
 }
 
+################################################################################
+
+
 
 
 ################################################################################
 ##------------------------------ CPquant.R  ----------------------------------##
 # shiny::includeMarkdown("./instructions_CPquant.md")
 ################################################################################
+
 options(shiny.maxRequestSize = 500 * 1024^2)
 
 ui <- shiny::navbarPage("CPquant",
@@ -700,7 +705,7 @@ ui <- shiny::navbarPage("CPquant",
                                 shiny::sidebarPanel(shiny::h3("Manual"),
                                                     width = 3),
                                 shiny::mainPanel(
-                                    shiny::includeMarkdown("instructions_CPquant.md")
+                                    shiny::includeMarkdown("./instructions_CPquant.md")
                                 )
                             )
                         )
@@ -768,15 +773,15 @@ server <- function(input, output, session) {
 
         progress$set(value = 0.8, detail = "Applying corrections")
 
-        #EXPERIMENTAL-START
-        # Sum all area if quanSum == "Sum Quan+Qual"
+
+        # Sum all area of ions belong to same homologue group if quanSum == "Sum Quan+Qual"
         if (input$quanSum == "Sum Quan+Qual") {
             df <- df |>
                 dplyr::group_by(Replicate_Name, Molecule_List, Molecule) |>
                 dplyr::mutate(Area = sum(Area)) |> #sums Quan and all Qual ions (all ions for the same Molecule will now have same Area)
                 dplyr::ungroup()
         }
-        #EXPERIMENTAL-END
+
 
         # Normalize data based on 'Correct with RS' input
         if (input$correctWithRS == "Yes" && any(df$Molecule_List == "RS")) {
@@ -799,7 +804,7 @@ server <- function(input, output, session) {
                 dplyr::group_by(Molecule, Molecule_List, Isotope_Label_Type) |>
                 dplyr::summarize(AverageBlank = mean(Area, na.rm = TRUE)) |>
                 dplyr::ungroup() |>
-                dplyr::filter(!Molecule_List %in% c("IS", "RS", "VS"))
+                dplyr::filter(!Molecule_List %in% c("IS", "RS", "VS")) # do not include IS or RS peaks
 
             df <- df |>
                 dplyr::full_join(df_blank) |>
@@ -999,14 +1004,11 @@ server <- function(input, output, session) {
 
             # This performs deconvolution on all mixtures together
             deconvolution <- combined_sample |>
-                #perform_deconvolution on only Relative_Area in the nested data frame
-                dplyr::mutate(result = purrr::map(data, ~ perform_deconvolution(dplyr::select(.x, Relative_Area), combined_standard, CPs_standards_sum_RF))) |>
+                dplyr::mutate(result = purrr::map(data, ~ perform_deconvolution(dplyr::select(.x, Relative_Area), combined_standard, CPs_standards_sum_RF))) |> #perform_deconvolution on only Relative_Area in the nested data frame
                 dplyr::mutate(sum_Area = purrr::map_dbl(data, ~sum(.x$Area))) |>
                 dplyr::mutate(sum_deconv_RF = as.numeric(purrr::map(result, purrr::pluck("sum_deconv_RF")))) |>
-                #EXPERIMENTAL-START
                 dplyr::mutate(Sample_Dilution_Factor = purrr::map_dbl(data, ~first(.x$Sample_Dilution_Factor))) |> #since all dilution factor is same for a replicate then take the first
                 dplyr::mutate(Concentration = sum_Area/sum_deconv_RF*Sample_Dilution_Factor) |>
-                #EXPERIMENTAL-END
                 dplyr::mutate(Unit = quantUnit()) |>
                 dplyr::mutate(deconv_coef = purrr::map(result, ~as_tibble(list(deconv_coef = .x$deconv_coef, Batch_Name = names(.x$deconv_coef))))) |>
                 dplyr::mutate(deconv_rsquared = as.numeric(purrr::map(result, purrr::pluck("deconv_rsquared")))) |>
@@ -1356,3 +1358,5 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
+
